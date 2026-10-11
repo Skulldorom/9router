@@ -9,6 +9,7 @@ const fx = vi.hoisted(() => ({
   ],
   keys: {},
   settings: { requireApiKey: false, comboStrategy: "fallback" },
+  comboLookupError: null,
 }));
 const mocks = vi.hoisted(() => ({
   getProviderCredentials: vi.fn(),
@@ -18,7 +19,10 @@ const mocks = vi.hoisted(() => ({
 vi.mock("@/lib/localDb", () => ({
   getSettings: async () => fx.settings,
   getModelAliases: async () => ({}),
-  getComboByName: async (name) => fx.combos.find((c) => c.name === name) || null,
+  getComboByName: async (name) => {
+    if (fx.comboLookupError) throw fx.comboLookupError;
+    return fx.combos.find((c) => c.name === name) || null;
+  },
   getProviderNodes: async () => [],
   getCombos: async () => fx.combos,
   getProviderConnections: async () => [],
@@ -76,6 +80,7 @@ const post = (path, body, k, extra = {}) => new Request(`http://localhost${path}
 beforeEach(() => {
   vi.clearAllMocks();
   fx.settings = { requireApiKey: false, comboStrategy: "fallback" };
+  fx.comboLookupError = null;
   fx.combos = [
     { id: "c1", name: "Main", models: ["openai/model-a", "openai/model-b"] },
   ];
@@ -214,6 +219,17 @@ describe("chat (/v1/chat/completions, /v1/messages, /v1/responses all use handle
     expect(r.status).toBe(200);
     expect(await r.text()).toContain("from-model-b");
     expect(mocks.handleChatCore.mock.calls.map(([call]) => call.modelInfo.model)).toEqual(["model-a", "model-b"]);
+  });
+  it("does not misreport target lookup failures as client configuration errors", async () => {
+    fx.combos = [{ id: "auto", name: "Coder Auto", models: ["Coder", "openai/high"] }];
+    fx.settings = {
+      requireApiKey: false,
+      comboStrategy: "fallback",
+      comboStrategies: { "Coder Auto": { fallbackStrategy: "auto" } },
+    };
+    fx.comboLookupError = new Error("database unavailable");
+
+    await expect(chat("Coder Auto", "sk-open")).rejects.toThrow("database unavailable");
   });
   it("ordinary combos can reach an Auto Router, but a selected route cannot reach another Auto Router", async () => {
     fx.combos = [

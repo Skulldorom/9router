@@ -55,6 +55,24 @@ describe("Auto Router classifier", () => {
     expect(classifyTaskComplexity(chat("Investigate this race condition")).reasons).toEqual(expect.arrayContaining(["concurrency"]));
   });
 
+  it("uses the leading task action instead of later passive complexity words", () => {
+    expect(classifyTaskComplexity(chat("Rename the audit architecture menu item")).escalationScore).toBe(0);
+    expect(classifyTaskComplexity(chat("Please investigate the architecture and authentication flow")).reasons)
+      .toEqual(expect.arrayContaining(["complex-action", "architecture", "security"]));
+  });
+
+  it("fails conservatively when only non-user context is available", () => {
+    const onlySystem = { messages: [{ role: "system", content: "follow these instructions" }] };
+    const assistantOnly = { messages: [{ role: "assistant", content: "I need more information" }] };
+
+    for (const body of [onlySystem, assistantOnly]) {
+      const result = classifyTaskComplexity(body);
+      expect(result.reasons).toEqual(["contextless-request"]);
+      expect(targetFor(body)).toBe("high");
+    }
+    expect(classifyTaskComplexity({ tools: [{ type: "function", function: { name: "read_file" } }] }).reasons).toEqual(["empty-request"]);
+  });
+
   it("supports equivalent supported request shapes without double counting", () => {
     const messages = [{ role: "user", content: "Fully audit this repository" }];
     expect(classifyTaskComplexity({ messages, input: messages, contents: messages }).escalationScore).toBe(classifyTaskComplexity({ messages }).escalationScore);

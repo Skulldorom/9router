@@ -30,32 +30,31 @@ import { AutoRouterConfigurationError, selectAutoRoute } from "../services/autoR
 
 
 async function handleAutoRouterCombo({ body, comboName, models, settings, autoRouterPath = new Set(), handleSelectedTarget }) {
-  let target;
-  let targetModels;
+  let decision;
   try {
     if (autoRouterPath.size > 0) {
       throw new AutoRouterConfigurationError(`Auto Router chaining is not supported (encountered "${comboName}").`);
     }
-    const decision = selectAutoRoute({
+    decision = selectAutoRoute({
       body,
       comboName,
       models,
       comboStrategies: settings.comboStrategies || {},
     });
-    ({ target } = decision);
-    targetModels = await getComboModels(target);
-    if (targetModels && settings.comboStrategies?.[target]?.fallbackStrategy === "auto") {
-      throw new AutoRouterConfigurationError(`Auto Router target "${target}" is configured as an Auto Router combo; Auto Router chaining is not supported.`);
-    }
-    const { classification, index, candidates } = decision;
-    log.info("AUTO-ROUTER", `combo=${comboName} rank=${index + 1}/${candidates.length} score=${classification.score} target=${target} reasons=${classification.reasons.join(",") || "none"}`);
   } catch (error) {
-    const message = error instanceof AutoRouterConfigurationError
-      ? error.message
-      : "Auto Router could not select a target.";
+    if (!(error instanceof AutoRouterConfigurationError)) throw error;
+    log.warn("AUTO-ROUTER", `combo=${comboName} selection failed: ${error.message}`);
+    return errorResponse(HTTP_STATUS.BAD_REQUEST, `Auto Router configuration error: ${error.message}`);
+  }
+
+  const { target, classification, index, candidates } = decision;
+  const targetModels = await getComboModels(target);
+  if (targetModels && settings.comboStrategies?.[target]?.fallbackStrategy === "auto") {
+    const message = `Auto Router target "${target}" is configured as an Auto Router combo; Auto Router chaining is not supported.`;
     log.warn("AUTO-ROUTER", `combo=${comboName} selection failed: ${message}`);
     return errorResponse(HTTP_STATUS.BAD_REQUEST, `Auto Router configuration error: ${message}`);
   }
+  log.info("AUTO-ROUTER", `combo=${comboName} rank=${index + 1}/${candidates.length} score=${classification.score} target=${target} reasons=${classification.reasons.join(",") || "none"}`);
   return handleSelectedTarget(target, targetModels);
 }
 
