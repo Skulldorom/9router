@@ -216,7 +216,7 @@ export function keywordMatches(text) {
   const taskOriented = COMPLEX_ACTION_TERMS.has(action);
   const reasonsFor = (groups, allowQuoted = false) => groups.filter((group) => group.terms.some((term) => hasTerm(tokens, term, allowQuoted))).map((group) => group.reason);
   return {
-    strong: taskOriented ? reasonsFor(STRONG_TASK_PHRASES) : [],
+    strong: reasonsFor(STRONG_TASK_PHRASES),
     complexAction: taskOriented,
     gated: taskOriented ? reasonsFor(GATED_TERMS, true) : [],
   };

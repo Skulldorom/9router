@@ -55,6 +55,7 @@ async function handleAutoRouterCombo({ body, comboName, models, settings, autoRo
     return errorResponse(HTTP_STATUS.BAD_REQUEST, `Auto Router configuration error: ${message}`);
   }
   log.info("AUTO-ROUTER", `combo=${comboName} rank=${index + 1}/${candidates.length} score=${classification.score} target=${target} reasons=${classification.reasons.join(",") || "none"}`);
+  log.debug("AUTO-ROUTER", `combo=${comboName} structural metadata`, classification.metadata);
   return handleSelectedTarget(target, targetModels);
 }
 

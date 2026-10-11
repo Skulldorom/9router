@@ -51,8 +51,23 @@ describe("Auto Router classifier", () => {
 
   it("resists quoted labels and identifier false positives", () => {
     expect(classifyTaskComplexity(chat('Rename the "Authentication" menu item')).escalationScore).toBe(0);
+    expect(classifyTaskComplexity(chat('Add a "Race Condition" menu item')).escalationScore).toBe(0);
+    expect(classifyTaskComplexity(chat('Rename the "Root Cause" heading')).escalationScore).toBe(0);
+    expect(classifyTaskComplexity(chat("Please add a debug log")).escalationScore).toBe(0);
     expect(classifyTaskComplexity(chat("update migration-plan.json and authenticationService")).escalationScore).toBe(0);
-    expect(classifyTaskComplexity(chat("Investigate this race condition")).reasons).toEqual(expect.arrayContaining(["concurrency"]));
+  });
+
+  it("escalates intrinsic debugging and concurrency signals regardless of leading action", () => {
+    for (const prompt of [
+      "Fix this race condition",
+      "Resolve the root cause",
+      "Find the root cause of this failure",
+      "There is a race condition in this code",
+      "Fix the intermittent failing tests",
+      "Could you help me debug this test?",
+    ]) {
+      expect(classifyTaskComplexity(chat(prompt)).escalationScore).toBeGreaterThanOrEqual(6);
+    }
   });
 
   it("uses the leading task action instead of later passive complexity words", () => {
