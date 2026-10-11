@@ -6,7 +6,7 @@ const DEFAULTS = Object.freeze({
 
 const TASK_ACTION_TERMS = ["audit", "review", "investigate", "analyze", "analyse", "assess", "diagnose", "debug", "refactor", "redesign", "restructure", "harden", "optimize", "optimise", "benchmark", "profile", "trace", "reproduce", "resolve", "rewrite", "overhaul", "plan", "implement", "survey"];
 const COMPLEX_ACTION_TERMS = new Set(TASK_ACTION_TERMS.filter((term) => !["plan", "implement", "resolve"].includes(term)));
-const SIMPLE_EDIT_ACTIONS = new Set(["add", "change", "correct", "edit", "fix", "rename", "replace", "set", "update"]);
+const LEADING_TASK_FILLERS = new Set(["can", "could", "would", "will", "please", "kindly", "you", "help", "me", "with", "to", "i", "we", "need", "want", "like", "fully", "deeply", "thoroughly"]);
 const STRONG_TASK_PHRASES = [
   { reason: "audit", terms: ["fully audit", "deep review", "deep repository audit"] },
   { reason: "architecture", terms: ["design the architecture", "design architecture", "repository restructure", "rollback procedures", "repository-wide", "multi-file", "cross-component", "cross component"] },
@@ -125,21 +125,26 @@ function inspectItem(item, state) {
   const role = own(item, "role");
   const type = own(item, "type");
   inspectToolActivity(item, state);
-  if (hasModality(item)) state.modalities += 1;
+  const modalityPresent = hasModality(item);
+  if (modalityPresent) state.modalities += 1;
   if (role === "user" || type === "input_text") {
-    state.userTexts.push(userText(own(item, "content") ?? own(item, "parts") ?? own(item, "input") ?? item));
+    const text = userText(own(item, "content") ?? own(item, "parts") ?? own(item, "input") ?? item);
+    state.userTexts.push(text);
+    if (text || modalityPresent) state.userContextItems += 1;
   }
 }
 
 export function inspectRequest(body) {
-  const state = { chars: 0, systemChars: 0, messageCount: 0, systemMessages: 0, toolCalls: 0, toolResults: 0, toolResultChars: 0, modalities: 0, userTexts: [] };
+  const state = { chars: 0, systemChars: 0, messageCount: 0, systemMessages: 0, itemCount: 0, userContextItems: 0, toolCalls: 0, toolResults: 0, toolResultChars: 0, modalities: 0, userTexts: [] };
   if (!body || typeof body !== "object" || Array.isArray(body)) return state;
   for (const { items, stringInput } of requestCollections(body)) {
     for (const item of items) {
+      state.itemCount += 1;
       if (stringInput) {
         state.messageCount += 1;
         state.chars += item.length;
         state.userTexts.push(item);
+        state.userContextItems += 1;
         continue;
       }
       const role = own(item, "role");
@@ -197,19 +202,36 @@ function hasTerm(tokens, term, allowQuoted = false) {
   return tokens.some((token, index) => phrase.every((part, offset) => tokens[index + offset]?.value === part && (allowQuoted || !tokens[index + offset].quoted)));
 }
 
+function firstTaskAction(tokens) {
+  for (const token of tokens) {
+    if (token.quoted || LEADING_TASK_FILLERS.has(token.value)) continue;
+    return token.value;
+  }
+  return null;
+}
+
 export function keywordMatches(text) {
   const tokens = intentTokens(text);
+  const action = firstTaskAction(tokens);
+  const taskOriented = COMPLEX_ACTION_TERMS.has(action);
   const reasonsFor = (groups, allowQuoted = false) => groups.filter((group) => group.terms.some((term) => hasTerm(tokens, term, allowQuoted))).map((group) => group.reason);
-  const taskOriented = TASK_ACTION_TERMS.some((term) => hasTerm(tokens, term));
   return {
-    strong: reasonsFor(STRONG_TASK_PHRASES),
-    complexAction: !SIMPLE_EDIT_ACTIONS.has(tokens[0]?.value) && tokens.slice(0, 4).some((token) => !token.quoted && COMPLEX_ACTION_TERMS.has(token.value)),
+    strong: taskOriented ? reasonsFor(STRONG_TASK_PHRASES) : [],
+    complexAction: taskOriented,
     gated: taskOriented ? reasonsFor(GATED_TERMS, true) : [],
   };
 }
 
-function conservative(reason, config) {
-  return { level: "hard", score: config.hardThreshold, escalationScore: config.hardThreshold, reasons: [reason], metadata: {} };
+function hasUsableRoutingContext(state, settings) {
+  if (state.userContextItems > 0) return true;
+  const activity = state.toolCalls + state.toolResults;
+  return activity >= 3
+    || state.toolResultChars >= Math.floor(settings.largeToolResultChars / 3)
+    || state.modalities >= 2;
+}
+
+function conservative(reason, config, metadata = {}) {
+  return { level: "hard", score: config.hardThreshold, escalationScore: config.hardThreshold, reasons: [reason], metadata };
 }
 
 export function classifyTaskComplexity(body, config = DEFAULTS) {
@@ -217,7 +239,9 @@ export function classifyTaskComplexity(body, config = DEFAULTS) {
   try {
     if (!body || typeof body !== "object" || Array.isArray(body)) return conservative("invalid-request", settings);
     const state = inspectRequest(body);
-    if (state.chars === 0 && state.messageCount === 0) return conservative("empty-request", settings);
+    const metadata = { chars: state.chars, systemChars: state.systemChars, messages: state.messageCount, systemMessages: state.systemMessages, toolCalls: state.toolCalls, toolResults: state.toolResults, toolResultChars: state.toolResultChars, modalities: state.modalities };
+    if (state.itemCount === 0) return conservative("empty-request", settings, metadata);
+    if (!hasUsableRoutingContext(state, settings)) return conservative("contextless-request", settings, metadata);
     let escalationScore = 0;
     const reasons = [];
     const add = (points, reason) => { escalationScore += points; reasons.push(reason); };
@@ -254,7 +278,7 @@ export function classifyTaskComplexity(body, config = DEFAULTS) {
       score: publicScore,
       escalationScore,
       reasons: [...new Set(reasons)],
-      metadata: { chars: state.chars, systemChars: state.systemChars, messages: state.messageCount, systemMessages: state.systemMessages, toolCalls: state.toolCalls, toolResults: state.toolResults, toolResultChars: state.toolResultChars, modalities: state.modalities },
+      metadata,
     };
   } catch {
     return conservative("classifier-error", settings);

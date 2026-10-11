@@ -46,7 +46,7 @@ export function selectAutoRoute({ body, comboName, models, comboStrategies = {},
   if (!classification || typeof classification !== "object" || !Array.isArray(classification.reasons) || !Number.isFinite(classification.escalationScore) || !Number.isFinite(classification.score)) {
     classification = classifierError();
   }
-  const conservativeReasons = new Set(["invalid-request", "empty-request", "classifier-error"]);
+  const conservativeReasons = new Set(["invalid-request", "empty-request", "contextless-request", "classifier-error"]);
   const isConservative = Array.isArray(classification.reasons) && classification.reasons.some((reason) => conservativeReasons.has(reason));
   const index = isConservative
     ? candidates.length - 1
