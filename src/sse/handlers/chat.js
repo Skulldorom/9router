@@ -28,6 +28,29 @@ import { getProjectIdForConnection } from "open-sse/services/projectId.js";
 import { stripModelContextMarker } from "open-sse/utils/modelMarkers.js";
 import { getKeyAccessContext, enforceKeyAccess, filterAdapterModels } from "../services/keyAccess.js";
 import { resolveSmartChoice } from "../services/systemoneRouter.js";
+import { AutoRouterConfigurationError, selectAutoRoute } from "../services/autoRouterSelection.js";
+
+async function handleAutoRouterCombo({ body, comboName, models, settings, autoRouterPath = new Set(), handleSelectedTarget }) {
+  let target;
+  try {
+    if (autoRouterPath.size > 0) {
+      throw new AutoRouterConfigurationError(`Auto Router chaining is not supported (encountered "${comboName}").`);
+    }
+    ({ target } = selectAutoRoute({
+      body,
+      comboName,
+      models,
+      comboStrategies: settings.comboStrategies || {},
+    }));
+  } catch (error) {
+    const message = error instanceof AutoRouterConfigurationError
+      ? error.message
+      : "Auto Router could not select a target.";
+    log.warn("AUTO-ROUTER", `combo=${comboName} selection failed: ${message}`);
+    return errorResponse(HTTP_STATUS.BAD_REQUEST, `Auto Router configuration error: ${message}`);
+  }
+  return handleSelectedTarget(target);
+}
 
 /**
  * Handle chat completion request
