@@ -8,6 +8,7 @@ const fx = vi.hoisted(() => ({
     { id: "c1", name: "Main", models: ["openai/model-a", "openai/model-b"] },
   ],
   keys: {},
+  settings: { requireApiKey: false, comboStrategy: "fallback" },
 }));
 const mocks = vi.hoisted(() => ({
   getProviderCredentials: vi.fn(),
@@ -15,7 +16,7 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock("@/lib/localDb", () => ({
-  getSettings: async () => ({ requireApiKey: false, comboStrategy: "fallback" }),
+  getSettings: async () => fx.settings,
   getModelAliases: async () => ({}),
   getComboByName: async (name) => fx.combos.find((c) => c.name === name) || null,
   getProviderNodes: async () => [],
@@ -74,6 +75,10 @@ const post = (path, body, k, extra = {}) => new Request(`http://localhost${path}
 
 beforeEach(() => {
   vi.clearAllMocks();
+  fx.settings = { requireApiKey: false, comboStrategy: "fallback" };
+  fx.combos = [
+    { id: "c1", name: "Main", models: ["openai/model-a", "openai/model-b"] },
+  ];
   fx.keys = {
     "sk-open": { id: "o", name: "open", isActive: true, access: { restricted: false, allow: [] } },
     "sk-combo": { id: "c", name: "combo", isActive: true, access: { restricted: true, allow: ["Main"] } },
@@ -151,6 +156,23 @@ describe("chat (/v1/chat/completions, /v1/messages, /v1/responses all use handle
     );
     expect(res.status).toBe(403);
     expect(mocks.handleChatCore).not.toHaveBeenCalled();
+  });
+  it("Auto Router selects one target and delegates through an ordinary nested combo", async () => {
+    fx.combos = [
+      { id: "auto", name: "Coder Auto", models: ["Coder", "openai/high"] },
+      { id: "nested", name: "Coder", models: ["openai/model-a", "openai/model-b"] },
+    ];
+    fx.settings = {
+      requireApiKey: false,
+      comboStrategy: "fallback",
+      comboStrategies: { "Coder Auto": { fallbackStrategy: "auto" } },
+    };
+
+    const r = await chat("Coder Auto", "sk-open");
+    expect(r.status).toBe(200);
+    expect(await r.text()).toContain("from-model-b");
+    expect(mocks.handleChatCore.mock.calls.map(([call]) => call.modelInfo.model)).toEqual(["model-a", "model-b"]);
+    expect(mocks.handleChatCore.mock.calls.map(([call]) => call.modelInfo.model)).not.toContain("high");
   });
 });
 

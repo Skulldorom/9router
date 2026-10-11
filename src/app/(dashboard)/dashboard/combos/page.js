@@ -49,6 +49,7 @@ function normalizeCapEntry(entry) {
 const STRATEGY_OPTIONS = [
   { value: "fallback", label: "Fallback — try in order" },
   { value: "round-robin", label: "Round Robin — rotate" },
+  { value: "auto", label: "Auto Router — select one tier" },
   { value: "fusion", label: "Fusion — panel + judge" },
 ];
 
