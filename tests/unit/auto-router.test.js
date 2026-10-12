@@ -70,17 +70,28 @@ describe("Auto Router classifier", () => {
     }
   });
 
-  it("uses the leading task action instead of later passive complexity words", () => {
+  it("uses task actions to gate domain terms without treating every task as complex", () => {
     expect(classifyTaskComplexity(chat("Rename the audit architecture menu item")).escalationScore).toBe(0);
     expect(classifyTaskComplexity(chat("Please investigate the architecture and authentication flow")).reasons)
       .toEqual(expect.arrayContaining(["complex-action", "architecture", "security"]));
+
+    for (const prompt of ["Plan a database migration", "Implement the authentication architecture", "Plan the rollback migration"]) {
+      const result = classifyTaskComplexity(chat(prompt));
+      expect(result.reasons).toEqual(expect.arrayContaining(["architecture"]));
+      expect(result.escalationScore).toBeGreaterThanOrEqual(6);
+    }
+    expect(classifyTaskComplexity(chat("Plan a database migration")).reasons).not.toContain("complex-action");
   });
 
-  it("fails conservatively when only non-user context is available", () => {
+  it("keeps all requests without recoverable user context conservative", () => {
     const onlySystem = { messages: [{ role: "system", content: "follow these instructions" }] };
     const assistantOnly = { messages: [{ role: "assistant", content: "I need more information" }] };
+    const twoToolEvents = { messages: [{ role: "assistant", tool_calls: [{}, {}], content: "" }] };
+    const threeToolEvents = { messages: [{ role: "assistant", tool_calls: [{}, {}, {}], content: "" }] };
+    const mediumToolResult = { messages: [{ role: "tool", content: "result".repeat(3000) }] };
+    const multiModal = { messages: [{ role: "assistant", content: [{ type: "input_image" }, { type: "input_file" }] }] };
 
-    for (const body of [onlySystem, assistantOnly]) {
+    for (const body of [onlySystem, assistantOnly, twoToolEvents, threeToolEvents, mediumToolResult, multiModal]) {
       const result = classifyTaskComplexity(body);
       expect(result.reasons).toEqual(["contextless-request"]);
       expect(targetFor(body)).toBe("high");
