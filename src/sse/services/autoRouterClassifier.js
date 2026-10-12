@@ -213,21 +213,18 @@ function firstTaskAction(tokens) {
 export function keywordMatches(text) {
   const tokens = intentTokens(text);
   const action = firstTaskAction(tokens);
-  const taskOriented = COMPLEX_ACTION_TERMS.has(action);
+  const taskOriented = TASK_ACTION_TERMS.includes(action);
+  const complexAction = COMPLEX_ACTION_TERMS.has(action);
   const reasonsFor = (groups, allowQuoted = false) => groups.filter((group) => group.terms.some((term) => hasTerm(tokens, term, allowQuoted))).map((group) => group.reason);
   return {
     strong: reasonsFor(STRONG_TASK_PHRASES),
-    complexAction: taskOriented,
+    complexAction,
     gated: taskOriented ? reasonsFor(GATED_TERMS, true) : [],
   };
 }
 
-function hasUsableRoutingContext(state, settings) {
-  if (state.userContextItems > 0) return true;
-  const activity = state.toolCalls + state.toolResults;
-  return activity >= 3
-    || state.toolResultChars >= Math.floor(settings.largeToolResultChars / 3)
-    || state.modalities >= 2;
+function hasUsableRoutingContext(state) {
+  return state.userContextItems > 0;
 }
 
 function conservative(reason, config, metadata = {}) {
