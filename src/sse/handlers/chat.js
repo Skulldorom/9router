@@ -204,7 +204,7 @@ export async function handleChat(request, clientRawRequest = null) {
             const { tools, tool_choice, ...cleanBody } = clientRawRequest.body || {};
             cleanRawReq = { ...clientRawRequest, body: cleanBody };
           }
-          return handleSingleModelChat(b, m, cleanRawReq, request, apiKey, null, autoRouterPath);
+          return handleSingleModelChat(b, m, cleanRawReq, request, apiKey);
         },
         log,
         comboName: modelStr,
@@ -220,7 +220,7 @@ export async function handleChat(request, clientRawRequest = null) {
       body,
       models: augmentedModels,
       handleSingleModel: withCapacityAdapterStripping(
-        (b, m) => handleSingleModelChat(b, m, clientRawRequest, request, apiKey, null, autoRouterPath),
+        (b, m) => handleSingleModelChat(b, m, clientRawRequest, request, apiKey),
         adapterAdded
       ),
       log,
